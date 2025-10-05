@@ -1,4 +1,4 @@
-Windows Keyboard Event Logger — Eğitim Amaçlı (README)
+Windows Keyboard Event Logger — Eğitim Amaçlı
 
 Uyarı (Kesin): Bu proje yalnızca eğitim, araştırma ve savunma amaçlıdır. Kişisel verilerin izinsiz kaydedilmesi, paylaşılması veya kötüye kullanımı suçtur. Projeyi yalnızca kendi kontrolünüzdeki, izole edilmiş ortamlar (ör. VM) ve açık rızası olan test hesapları üzerinde çalıştırın. Bu proje, izinsiz gözetim veya veri toplama amaçlarına yönelik kullanılmamalıdır.
 
