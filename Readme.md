@@ -1,117 +1,91 @@
-Windows Keyboard Event Logger — Eğitim Amaçlı
+# Keylogger Projesi
 
-**Uyarı:** Bu proje **sadece eğitim ve test amaçlıdır**. Başka bir kişinin bilgisi ve izni olmadan kullanımı yasa dışıdır ve etik dışıdır. Bu kodu izinsiz kullanmaktan doğacak tüm hukuki ve etik sorumluluklar kullanıcıya aittir.
+Bu proje, yalnızca **eğitimsel amaçlarla** geliştirilmiş bir Windows Forms tabanlı **C# Keylogger** uygulamasıdır. Uygulama, klavye girdilerini algılayarak bir metin kutusunda görüntüler ve aynı zamanda veritabanı veya e-posta ile loglama altyapısının nasıl çalıştığını öğretmeyi amaçlar. Proje, Nesne Tabanlı Programlama dersi kapsamında bir ödev olarak hazırlanmıştır.
 
-## Özet
+---
 
-Windows işletim sistemi üzerinde çalışan bu uygulama, global keyboard hook ile tuş girişlerini yakalar, cümle bazında (nokta, soru işareti, ünlem veya yeni satır ile) tamponlayarak SQL Server veritabanına kaydeder ve belirlenen aralıklarla batch halinde Gmail SMTP üzerinden e-posta ile gönderir. Ayrıca uygulama içinde kullanıcı veri silme talebi gönderebilecek bir arayüz bulunmaktadır.
+## ⚙️ Proje Özellikleri
 
-## Özellikler
+- **Klavye Girdilerini Dinleme:** Windows API (`SetWindowsHookEx`, `CallNextHookEx`, `UnhookWindowsHookEx`) kullanılarak düşük seviye klavye olaylarını yakalar.
+- **Arayüz Tabanlı İzleme:** Girişler `RichTextBox` bileşenine gerçek zamanlı olarak yazılır.
+- **Veritabanı veya Mail Desteği (Opsiyonel):** SqlConnection veya SMTP üzerinden logların iletilmesi yapılandırılabilir.
+- **Invoke Kullanımı:** Form bileşenleri arasında thread-safe erişim için `Invoke` yöntemi uygulanır.
+- **Regex Filtreleme:** Gereksiz karakterlerin ayıklanması ve okunabilirliğin artırılması sağlanır.
+- **Arka Plan Çalışması:** Uygulama `Task` veya `Thread` ile arka planda çalıştırılabilir.
+- **MAC Adresi Takibi:** Her log kaydı, sistemin donanım kimliği olarak kullanılan **cihazın MAC adresi** ile birlikte veritabanına eklenir; ayrıca **veri silme talebi e-postalarında** ilgili cihazın MAC adresi de otomatik olarak iletilir.
 
-- Global low-level keyboard hook ile tuş yakalama (WH_KEYBOARD_LL).
-- Karakterleri `ToUnicode` ile yerel klavye düzenine göre çözümleme (shift, caps lock durumu dikkate alınır).
-- Cümle bazında tamponlama ve veritabanına kayıt (TBL_LOGGER).
-- Batch tabanlı e-posta gönderimi (Gmail SMTP, app.config ile konfigüre edilebilir).
-- Gönderim deneme sayısı yönetimi; başarısız denemelerde `sendAttempts` arttırılır.
-- Form kapanışında buffer temizliği ve hook kaldırma işlemleri ile güvenli kapanış.
-- Kullanıcıdan gelen veri silme talebini e-posta ile yöneticilere iletme.
+---
 
-## Gereksinimler
+## 🧠 Eğitimsel Amaç
 
-- .NET Framework 4.8
-- Visual Studio (veya uyumlu IDE)
-- SQL Server (LocalDB / Local / Uzak)
-- Gmail hesabı ve App Password (SMTP için)
+Bu proje, siber güvenlik ve sistem programlama konularında farkındalık kazandırmak amacıyla hazırlanmıştır. **Kullanıcı izni olmadan keylogger yazılımı geliştirmek veya dağıtmak yasal değildir.**  
+Bu proje yalnızca etik ve laboratuvar ortamında incelenmelidir.
 
-## Veritabanı - Yapı
+---
 
-Aşağıdaki SQL, gerekli tabloyu oluşturmak içindir. `DboKeylogger` isimli veritabanını yaratıp tabloyu ekleyin.
+## 📦 Kullanılan Teknolojiler
 
-```sql
-CREATE DATABASE DboKeylogger;
-GO
+| Teknoloji | Açıklama |
+|------------|----------|
+| C# .NET Framework | Uygulamanın ana geliştirme dili |
+| Windows API | Klavye olaylarını yakalamak için |
+| Windows Forms | Kullanıcı arayüzü |
+| SQL / SMTP | Veri gönderimi (opsiyonel) |
+| Ağ Arayüzü (MAC) | Donanım tabanlı cihaz kimliği izleme |
 
-USE DboKeylogger;
-GO
+---
 
-Sistem düzeyinde klavye kancası kurma (SetWindowsHookEx).
+## 🧩 Kod Yapısı
 
-Basılan tuşları ToUnicode ile karaktere çevirme.
+```
+Keylogger/
+│
+├── Form1.cs              # Ana form ve event hook yapısı
+├── Program.cs            # Uygulama başlangıç noktası
+├── App.config            # Veritabanı ve SMTP ayarları
+└── README.md             # Proje dökümantasyonu
+```
 
-Shift, CapsLock ve Alt durumlarını kontrol etme.
+---
 
-Basılan karakterleri RichTextBox üzerinde gösterme.
+## 🚀 Çalıştırma Adımları
 
-Noktalama işaretlerinden sonra satır sonu ekleme mantığı.
+1. **Projeyi açın:** Visual Studio veya Rider gibi bir IDE kullanın.  
+2. **Gerekli izinleri sağlayın:** Yönetici yetkileri gerekebilir.  
+3. **App.config** dosyasındaki ayarları düzenleyin (isteğe bağlı olarak SQL veya Mail).
+4. **Projeyi çalıştırın.**
+5. **Klavye girişlerini izleyin.**
 
-Proje bağlantıları için Process.Start kullanan örnek LinkLabel handler'ları.
+---
 
-4. Henüz Eklenmeyen / Bilinçli Olarak Hariç Tutulan Özellikler
+## 🧱 Alan Açıklamaları
 
-Aşağıdaki özellikler bu eğitim projesinde bilerek yer almamalıdır veya yalnızca denetimli ortamlarda ve net onayla eklenmelidir:
+- **`WH_KEYBOARD_LL`** → Klavye hook türünü tanımlar (düşük seviye).  
+- **`CallNextHookEx`** → Sonraki hook’a olayın iletilmesini sağlar.  
+- **`Marshal.GetDelegateForFunctionPointer`** → Fonksiyon işaretçilerinin yönetilmesi için kullanılır.  
+- **`Invoke` / `MethodInvoker`** → Thread-safe arayüz güncellemesi sağlar.  
+- **`Regex.Replace()`** → Metin temizleme ve biçimlendirme işlemleri yapılır.  
+- **`SqlConnection` / `SqlCommand`** → Log kayıtlarını veritabanına gönderir.  
+- **`SmtpClient` / `MailMessage`** → Logları e-posta ile gönderir.  
+- **`NetworkInterface.GetAllNetworkInterfaces()`** → Cihazın MAC adresini alır ve log verilerine dahil eder.
 
-Uzaktan veri aktarımı (ağ üzerinden gönderim, telemetry, FTP/HTTP exfiltration).
 
-Arka plan çalışan, başlatma zamanına kalıcı ekleme (persistence).
+---
 
-Gizleme/obfuscation, anti-forensics, keylogger’ı tespitten kaçırma teknikleri.
+## ⚠️ Yasal Uyarı
 
-Kullanıcıların izni olmadan veri saklama veya üçüncü taraflarla paylaşım.
+Bu yazılım **tamamen eğitimsel nitelikte** olup, kullanıcı verilerini izinsiz toplamak, paylaşmak veya kötüye kullanmak **suçtur**.  
+Projeyi yalnızca **laboratuvar**, **akademik çalışma** veya **etik hackleme** kapsamında kullanınız.
 
-5. Güvenli Test ve Geliştirme Rehberi (Zorunlu)
+---
 
-Projenin güvenli, etik ve yasal bir şekilde incelenmesi için izlenecek asgari prosedür:
+## 📚 Lisans
 
-İzole Ortam: Her zaman sanal makine (VM) veya izole test makinesi kullanın. Host üzerinde çalıştırmayın.
+Bu proje [MIT Lisansı](https://opensource.org/licenses/MIT) altında yayımlanmıştır.  
+Her türlü ticari veya kötüye kullanım, geliştirici sorumluluğu dışındadır.
 
-Kullanıcı/Rıza: Test kullanıcıları açıkça bilgilendirilmeli ve yazılı onay alınmalıdır.
+---
 
-Veri: Gerçek kişisel veriler (şifre, banka bilgisi, kimlik numaraları) kullanılmaz. Test verileri oluşturun.
-
-Ağ Erişimi: Test VM’nin ağ erişimini kısıtlayın; gerekiyorsa tamamen kapatın.
-
-Log Tutma & Silme: Deney sonrası kaydedilen herhangi bir veri derhal silinir; silme prosedürü belgeye bağlanır.
-
-İzleme & Denetim: Deney sırasında erişim ve etkinlikler kaydedilir; yetkisiz kullanım hızlıca raporlanır.
-
-6. Güvenlik Tavsiyeleri (Geliştirici Perspektifi)
-
-Kaydetme/aktarma özellikleri eklemeden önce gizlilik, şifreleme ve erişim kontrolü politikalarını belirleyin.
-
-Proje asla default olarak hassas veri saklamamalı; kullanıcı ayarları ve izinler açıkça yönetilmeli.
-
-Kodun kötüye kullanım riskleri için kod incelemesi ve dış güvenlik denetimi planlayın.
-
-Her zaman audit trail ve erişim kayıtları tutun; denetim belgelerini saklayın.
-
-7. Derleme ve Çalıştırma (Eğitimsel)
-
-UYARI: Aşağıdaki adımları yalnızca izole ve izinli test ortamında uygulayın.
-
-Visual Studio ile projeyi açın (sln dosyası).
-
-Hedef framework .NET Framework 4.7.2+ olarak ayarlı olmalıdır.
-
-Debug modunda başlatın. Yönetici yetkisi gerekliyse Visual Studio'yu yönetici olarak çalıştırın.
-
-Test senaryoları ile tuş yakalama davranışını gözlemleyin.
-
-8. Katkı (Contributing)
-
-Katkı kabul edilir ancak gizlilik ve etik kurallar çerçevesinde sınırlıdır.
-
-Pull request gönderirken amaç, test ortamı ve alınan onaylar açıkça belirtilmelidir.
-
-Kötüye kullanım potansiyeli taşıyan değişiklikler rededilebilir.
-
-9. Lisans
-
-Proje MIT lisansı ile lisanslanmıştır (veya proje sahibinin tercih ettiği açık lisans). Lisans, kodun eğitim amaçlı kopyalanmasına izin verir; kötüye kullanım sorumluluğu kullanıcıya aittir.
-
-10. İletişim
-
-Geliştirici: Bilal
-
-GitHub: https://github.com/BilalAbic
-
-E-posta (iş): bilalabic78[@]gmail.com
+**Geliştirici:** Bilal  
+**Amaç:** Eğitimsel ve akademik farkındalık  
+**Dil:** C# (.NET Framework 4.8)  

