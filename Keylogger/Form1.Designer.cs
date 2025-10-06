@@ -196,7 +196,7 @@
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(128)))), ((int)(((byte)(161)))), ((int)(((byte)(186)))));
-            this.ClientSize = new System.Drawing.Size(951, 566);
+            this.ClientSize = new System.Drawing.Size(967, 566);
             this.Controls.Add(this.rtxtLog);
             this.Controls.Add(this.btnOnay);
             this.Controls.Add(this.llbnProfilLink);

