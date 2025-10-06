@@ -89,3 +89,7 @@ Her türlü ticari veya kötüye kullanım, geliştirici sorumluluğu dışında
 **Geliştirici:** Bilal  
 **Amaç:** Eğitimsel ve akademik farkındalık  
 **Dil:** C# (.NET Framework 4.8)  
+
+---
+
+## 📌 Bu proje, ilham kaynağı olarak [bu videodan](https://www.youtube.com/watch?v=j0sxcsxXJkY) yararlanılarak hazırlanmıştır.
