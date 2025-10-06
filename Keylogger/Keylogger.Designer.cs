@@ -43,7 +43,6 @@
             this.llbnProfilLink = new System.Windows.Forms.LinkLabel();
             this.btnOnay = new System.Windows.Forms.Button();
             this.rtxtLog = new System.Windows.Forms.RichTextBox();
-            this.lblMac = new System.Windows.Forms.Label();
             this.SuspendLayout();
             // 
             // lbnKeylogger
@@ -192,22 +191,12 @@
             this.rtxtLog.Text = "";
             this.rtxtLog.WordWrap = false;
             // 
-            // lblMac
-            // 
-            this.lblMac.AutoSize = true;
-            this.lblMac.Location = new System.Drawing.Point(720, 219);
-            this.lblMac.Name = "lblMac";
-            this.lblMac.Size = new System.Drawing.Size(35, 13);
-            this.lblMac.TabIndex = 16;
-            this.lblMac.Text = "label4";
-            // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(128)))), ((int)(((byte)(161)))), ((int)(((byte)(186)))));
             this.ClientSize = new System.Drawing.Size(967, 566);
-            this.Controls.Add(this.lblMac);
             this.Controls.Add(this.rtxtLog);
             this.Controls.Add(this.btnOnay);
             this.Controls.Add(this.llbnProfilLink);
@@ -247,7 +236,6 @@
         private System.Windows.Forms.LinkLabel llbnProfilLink;
         private System.Windows.Forms.Button btnOnay;
         private System.Windows.Forms.RichTextBox rtxtLog;
-        private System.Windows.Forms.Label lblMac;
     }
 }
 

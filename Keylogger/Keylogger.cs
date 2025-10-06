@@ -132,11 +132,7 @@ namespace Keylogger
             sendTimer.Start();
 
 
-            var primaryMac = GetPrimaryMacAddress();
-            if (!string.IsNullOrEmpty(primaryMac))
-                lblMac.Text = primaryMac;
-            else
-                lblMac.Text = "MAC adresi bulunamadı.";
+           
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
