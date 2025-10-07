@@ -6,7 +6,7 @@ Bu proje, yalnızca **eğitimsel amaçlarla** geliştirilmiş bir Windows Forms 
 
 ## 🎥 Proje Tanıtım Videosu  
 Projemizin genel işleyişini ve özelliklerini kısa bir video ile tanıttık.  
-📺 [YouTube'da İzle](https://youtu.be/SUSllYW3mcg)
+📺 [YouTube'da İzle](https://youtu.be/2EwUBCrlOvg)
 
  ---
 
