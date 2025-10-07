@@ -4,6 +4,12 @@ Bu proje, yalnızca **eğitimsel amaçlarla** geliştirilmiş bir Windows Forms 
 
 ---
 
+## 🎥 Proje Tanıtım Videosu  
+Projemizin genel işleyişini ve özelliklerini kısa bir video ile tanıttık.  
+📺 [YouTube'da İzle](https://www.youtube.com/watch?v=YOUR_VIDEO_ID)
+
+ ---
+
 ## ⚙️ Proje Özellikleri
 
 - **Klavye Girdilerini Dinleme:** Windows API (`SetWindowsHookEx`, `CallNextHookEx`, `UnhookWindowsHookEx`) kullanılarak düşük seviye klavye olaylarını yakalar.
